@@ -4,14 +4,15 @@ from threading import Thread, Event
 from time import sleep, time
 import math
 import struct
+from Instrumentation import Inst
 
 class Mavlink(object):
 
     # Constructor
-    def __init__(self,connect):
+    def __init__(self):
 
-        # Development stub
-        self.connectMavlink = connect
+        # Instrumentation
+        self.inst = Inst()
 
         # Initialise settings
         self.portName = None
@@ -78,11 +79,6 @@ class Mavlink(object):
 
     def Connect(self, ipAddress, portNumber):
 
-        # Development stub 
-        if(self.connectMavlink==False):
-            return
-        #end if
-
         # Construct port name from number
         if((portNumber>5000) and (portNumber<=5770)):
             address = "tcp:" + ipAddress
@@ -93,7 +89,7 @@ class Mavlink(object):
             self.portName  = address + ":" + str(portNumber)
             self.baudRate = 115200
         elif os.name == 'nt':
-            _inst.Print(CR,"Running serial connection on Windows")
+            self.inst.Print(Inst.CR,"Running serial connection on Windows")
 
             if(portNumber<100):
                 self.portName  = "COM" + str(portNumber)
@@ -102,7 +98,7 @@ class Mavlink(object):
 
         # Assumed to be running on Linux 
         else:
-            _inst.Print(CR,"Running serial connection on Linux")
+            self.inst.Print(Inst.CR,"Running serial connection on Linux")
 
             # Port 1 = GUI drone link
             if(portNumber==1):
@@ -127,7 +123,7 @@ class Mavlink(object):
         self.mavPort = None
 
         # Start receiver monitor
-        _inst.Print(CR,"Starting Mavlink receiver monitor")
+        self.inst.Print(Inst.CR,"Starting Mavlink receiver monitor")
         self._closeMonitorThread = Event()
         self._monitorThread = Thread(target=self.ProcessMessages)
         self._monitorThread.setDaemon(True)
@@ -136,14 +132,10 @@ class Mavlink(object):
     # Connect
 
     def Disconnect(self):
-        if(self.connectMavlink==False):
-            pass
-        else:
-            """Disconnect from a Mavlink RC device"""
-            self._closeMonitorThread.set()
-            self._monitorThread.join()
-            self.mavPort.close()
-        # if
+        """Disconnect from a Mavlink RC device"""
+        self._closeMonitorThread.set()
+        self._monitorThread.join()
+        self.mavPort.close()
     # def
 
     # command processing methods 
@@ -162,30 +154,30 @@ class Mavlink(object):
 
             # Check if connect needed
             if(self.mavPort==None): 
-                _inst.Print(CR,"Connecting to " + self.portName)
+                self.inst.Print(Inst.CR,"Connecting to " + self.portName)
                 try:
 
                     # Connect to link 
                     self.mavPort  = mavutil.mavlink_connection(self.portName, self.baudRate)
-                    _inst.Print(CR,"Connected to " + self.portName)
+                    self.inst.Print(Inst.CR,"Connected to " + self.portName)
 
                     # Wait for the heartbeat msg to find the system ID
-                    _inst.Print(CR,"Waiting for heartbeat")
+                    self.inst.Print(Inst.CR,"Waiting for heartbeat")
                     self.mavPort.wait_heartbeat()
-                    _inst.Print(CR,"Heartbeat System=" + str(self.mavPort.target_system) + " Component=" + str(self.mavPort.target_component) )
+                    self.inst.Print(Inst.CR,"Heartbeat System=" + str(self.mavPort.target_system) + " Component=" + str(self.mavPort.target_component) )
 
                     # Request all available UAV data
                     self.RequestData()
 
                 except Exception as e:
-                    _inst.Print(CR,"Connect failed: " +str(e))
+                    self.inst.Print(Inst.CR,"Connect failed: " +str(e))
             #end if
 
             # Wait for a message
             try:
                 msg = self.mavPort.recv_match(blocking=True)
             except Exception as e:
-                _inst.Print(CR,"Receive failed: " +str(e))
+                self.inst.Print(Inst.CR,"Receive failed: " +str(e))
                 sleep(0.5)
                 if self.mavPort is not None:
                     self.mavPort.close()
@@ -194,13 +186,13 @@ class Mavlink(object):
 
             # Check if a message has arrived
             if not msg:
-                _inst.Print(CR ,"Nothing heard")
+                self.inst.Print(Inst.CR ,"Nothing heard")
                 continue
             #end if
 
             # Instrumentation
             if msg.get_type() != "BAD_DATA":
-                _inst.Print(OFF ,"MessageType=" + msg.get_type())
+                self.inst.Print(Inst.OFF ,"MessageType=" + msg.get_type())
             # if
 
             self.packetError = False
@@ -211,11 +203,11 @@ class Mavlink(object):
             self.lastReceivedTime = time()
 
             # Decode message
-            instMode = OFF
+            instMode = Inst.OFF
             if msg.get_type() == "BAD_DATA":
-                _inst.Print(instMode,"Bad=" + str(msg))
+                self.inst.Print(instMode,"Bad=" + str(msg))
                 #if mavutil.all_printable(msg.data):
-                #   _inst.Print(CR,"Bad message data=" + str(msg.data))
+                #   self.inst.Print(Inst.CR,"Bad message data=" + str(msg.data))
                 #end if
             elif msg.get_type() == "HEARTBEAT":
 
@@ -224,7 +216,7 @@ class Mavlink(object):
                    (msg.type==mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER)):
                     pass
                 else:
-                    _inst.Print(instMode,"A")
+                    self.inst.Print(instMode,"A")
                     # Store heartbeat for decode if needed
                     self.heartbeat = msg
                     # Do immediate armed decode
@@ -234,31 +226,31 @@ class Mavlink(object):
             elif msg.get_type() == "COMMAND_ACK":
                 self.lastAckedCmd = msg.command
                 self.lastAckedResult = msg.result
-                _inst.Print(OFF,"COMMAND_ACK=" + str(msg))
+                self.inst.Print(Inst.OFF,"COMMAND_ACK=" + str(msg))
             elif msg.get_type() == "STATUSTEXT":
-                _inst.Print(instMode,"B")
-                _inst.Print(CR,"[" + msg.text + "]")
+                self.inst.Print(instMode,"B")
+                self.inst.Print(Inst.CR,"[" + msg.text + "]")
             elif msg.get_type() == "ATTITUDE":
                 yawcoords = msg.yaw
-                _inst.Print(instMode,"C")
+                self.inst.Print(instMode,"C")
                 self.pitch = self.RadsToDegrees(msg.pitch)
                 self.roll  = self.RadsToDegrees(msg.roll)
                 self.yaw   = self.RadsToDegrees(msg.yaw)
             elif msg.get_type() == "SYS_STATUS":
-                _inst.Print(instMode,"D")
+                self.inst.Print(instMode,"D")
                 self.voltage = round(msg.voltage_battery / 1000.0,1) # Convert to Volts
                 self.current = round(msg.current_battery / 100.0, 2) # Convert to Amps
             elif msg.get_type() == "DISTANCE_SENSOR":
-                _inst.Print(instMode,"E")
+                self.inst.Print(instMode,"E")
                 self.lidarStat  = msg.covariance
                 self.lidarAlt   = round(msg.current_distance / 100.0,2) # Convert cm to m
-                _inst.Print(instMode,"Distance=" + str(self.lidarStat) + " " + str(self.lidarAlt) )
+                self.inst.Print(instMode,"Distance=" + str(self.lidarStat) + " " + str(self.lidarAlt) )
             elif msg.get_type() == "COMMAND_LONG":
-                _inst.Print(instMode,"H")
+                self.inst.Print(instMode,"H")
                 self.longCommandMsg = msg
             # GPS
             elif msg.get_type() == "GPS_RAW_INT":
-                _inst.Print(instMode,"F")
+                self.inst.Print(instMode,"F")
                 self.sats = msg.satellites_visible
                 self.fix = msg.fix_type
                 self.heading = msg.cog
@@ -267,7 +259,7 @@ class Mavlink(object):
                 localpositionnedcoords = [msg.x, msg.y, msg.z]
             elif msg.get_type() == "GLOBAL_POSITION_INT":
 
-                _inst.Print(instMode,"G")
+                self.inst.Print(instMode,"G")
                 self.lat = (msg.lat / 10000000.0) # Convert to degrees
                 self.lon = (msg.lon / 10000000.0) # Convert to degrees
                 globalpositionintcoords = [self.lat, self.lon]
@@ -275,7 +267,7 @@ class Mavlink(object):
                 self.altAgl = round(msg.relative_alt / 1000.0,             2) # Convert mm to m
                 self.speed  = round(math.sqrt((msg.vx ** 2) + (msg.vy ** 2)),1) # m/s
             elif msg.get_type() == "RC_CHANNELS_RAW":
-                _inst.Print(CR,"RC_CHANNELS_RAW C1[" + str(msg.chan1_raw) + "] C2[" + str(msg.chan2_raw) + "] C3[" + str(msg.chan3_raw) + "] C4[" + str(msg.chan4_raw) + "]")
+                self.inst.Print(Inst.CR,"RC_CHANNELS_RAW C1[" + str(msg.chan1_raw) + "] C2[" + str(msg.chan2_raw) + "] C3[" + str(msg.chan3_raw) + "] C4[" + str(msg.chan4_raw) + "]")
                 self.rawRc1 = msg.chan1_raw
                 self.rawRc2 = msg.chan2_raw
                 self.rawRc3 = msg.chan3_raw
@@ -285,9 +277,9 @@ class Mavlink(object):
                 self.rawRc7 = msg.chan7_raw
                 self.rawRc8 = msg.chan8_raw
             elif msg.get_type() == "MOUNT_ORIENTATION":
-                _inst.Print(OFF,"MOUNT_ORIENTATION [" + str(msg.pitch) + "] [" + str(msg.roll) + "] [" + str(msg.yaw) + "]")
+                self.inst.Print(Inst.OFF,"MOUNT_ORIENTATION [" + str(msg.pitch) + "] [" + str(msg.roll) + "] [" + str(msg.yaw) + "]")
             elif msg.get_type() == "MOUNT_STATUS":
-                _inst.Print(OFF,"MOUNT_STATUS")
+                self.inst.Print(Inst.OFF,"MOUNT_STATUS")
             #end if
 
     # def
@@ -418,7 +410,7 @@ class Mavlink(object):
 
             # Check for timeout
             if(time() - startTime > timeoutSecs):
-                _inst.Print(CR,"Timeout on ack for [" + str(cmd) + "]")
+                self.inst.Print(Inst.CR,"Timeout on ack for [" + str(cmd) + "]")
                 return False
 
             sleep(0.01)
@@ -445,7 +437,7 @@ class Mavlink(object):
 
         # Instrumentation
         ackTime = time() - startTime
-        _inst.Print(CR,"Got ack Cmd[" + str(self.lastAckedCmd) + "] Result[" + resultText + "] Latency[" + str(int(ackTime*1000)) + "]ms")
+        self.inst.Print(Inst.CR,"Got ack Cmd[" + str(self.lastAckedCmd) + "] Result[" + resultText + "] Latency[" + str(int(ackTime*1000)) + "]ms")
 
         # Clear down to wait for next ack
         self.lastAckedCmd = None
@@ -464,7 +456,7 @@ class Mavlink(object):
 
             # Check for timeout
             if(time() - startTime > timeoutSecs):
-                _inst.Print(CR,"Timeout on heartbeat")
+                self.inst.Print(Inst.CR,"Timeout on heartbeat")
                 return False
 
             sleep(0.01)
@@ -488,7 +480,7 @@ class Mavlink(object):
         else:
             overrideCode = 0
         # if
-        _inst.Print(CR,"ArmDisarm[" + str(arm) + "] Override[" + str(override) + "]")
+        self.inst.Print(Inst.CR,"ArmDisarm[" + str(arm) + "] Override[" + str(override) + "]")
         # end if
 
         self.mavPort.mav.command_long_send(
@@ -511,7 +503,7 @@ class Mavlink(object):
     
     def TakeOff(self, altitude):
         # First send take off comand
-        _inst.Print(CR,"Takeoff to [" + str(altitude) + "]")
+        self.inst.Print(Inst.CR,"Takeoff to [" + str(altitude) + "]")
         self.mavPort.mav.command_long_send(
             self.mavPort.target_system,
             self.mavPort.target_component,
@@ -531,7 +523,7 @@ class Mavlink(object):
     # def
     
     def MissionStart(self):
-        _inst.Print(CR,"Start mission")
+        self.inst.Print(Inst.CR,"Start mission")
         self.mavPort.mav.command_long_send(
             self.mavPort.target_system,
             self.mavPort.target_component,
@@ -582,7 +574,7 @@ class Mavlink(object):
     # def
 
     def Land(self):
-        _inst.Print(CR,"Land")
+        self.inst.Print(Inst.CR,"Land")
         self.mavPort.mav.command_long_send(
             self.mavPort.target_system,
             self.mavPort.target_component,
@@ -601,35 +593,44 @@ class Mavlink(object):
 
     # def
     
-    def TargetedLand(x_rad=0, y_rad=0, dist_m=0, x_m=0,y_m=0,z_m=0, time_usec=0, target_num=0, quart=(1,0,0,0), valid=0):
+    def TargetedLand(self,x,y,z):
+
+        # Derive descent angle
+        xRads = math.atan(z/x)
+        yRads = math.atan(z/y)
+
+        self.mavPort.mav.landing_target_send(
+            int(time() * 1e6),  # Timestamp
+            0,  # Target number
+            mavutil.mavlink.MAV_FRAME_BODY_NED,  # Frame of reference
+            xRads,   # X-offset in radians (centered target = 0)
+            yRads,   # Y-offset in radians (centered target = 0)
+            z,   # Distance to target (meters)
+            0.5,   # Target size (meters)
+            0      # Target type (0 = Fiducial marker, 1 = beacon)
+            )
+
         self.mavPort.mav.command_long_send(
-            connection.target_system,   # Target system ID
-            connection.target_component,  # Target component ID
-            mavutil.mavlink.MAV_CMD_NAV_LAND_LOCAL,  # Land at a local offset
-            0,  # Confirmation
-            0,  # Empty param (unused)
-            0,  # Empty param (unused)
-            0,  # Empty param (unused)
-            0,  # Empty param (unused)
-            x,  # X offset (forward in meters)
-            y,  # Y offset (right in meters)
-            z   # Z offset (down in meters, usually 0 for landing)
-        )
+            self.mavPort.target_system,
+            self.mavPort.target_component,
+            mavutil.mavlink.MAV_CMD_NAV_LAND, 0,
+            0, 0, 0, 0, 0, 0, 0
+            )
 
         # Wait for ack
-        self.WaitForAck(mavutil.mavlink.MAV_CMD_NAV_LAND_LOCAL)
+        self.WaitForAck(mavutil.mavlink.MAV_CMD_NAV_LAND)
     # def
 
     # Dummy Rangefinder
-    def SendRangfinderMetres(metres):
+    def SendRangefinderMetres(self,metres):
 
         # Dummy voltage
         voltage = 5.0
 
         # MAVLink message: RANGEFINDER
         self.mavPort.mav.rangefinder_send(
-            distance,  # Distance in meters
-            voltage    # Voltage in volts
+            metres,  # Distance in meters
+            voltage  # Voltage in volts
         )
     # def
 
@@ -677,7 +678,7 @@ class Mavlink(object):
     # def
 
     def CmdPosition(self, x_m, y_m, z_m):
-        _inst.Print(CR,"CmdPosition[x:%.1f, y:%.1f, z:%.1f]" % (x_m, y_m, z_m))
+        self.inst.Print(Inst.CR,"CmdPosition[x:%.1f, y:%.1f, z:%.1f]" % (x_m, y_m, z_m))
         self.mavPort.mav.set_position_target_local_ned_send(
                                   0,  # system time in milliseconds
                                   self.mavPort.target_system,
@@ -691,7 +692,7 @@ class Mavlink(object):
     # def
 
     def SetFlightMode(self, basemode, submode):
-        _inst.Print(CR,"Setting flight mode Base[" + str(basemode) + "] Sub[" + str(submode) + "]")
+        self.inst.Print(Inst.CR,"Setting flight mode Base[" + str(basemode) + "] Sub[" + str(submode) + "]")
         self.mavPort.mav.command_long_send(
             self.mavPort.target_system,
             self.mavPort.target_component,
@@ -735,7 +736,7 @@ class Mavlink(object):
     
     def SetDefaultGlobalOrigin(self,latitude,longitude,altitude):  ## Must be run at each power cycle to give local coordinates
 
-        _inst.Print(CR,"SetDefaultGlobalOrigin Lat[" + str(latitude) + "] Long[" + str(longitude) + "] Alt[" + str(altitude) + "]")
+        self.inst.Print(Inst.CR,"SetDefaultGlobalOrigin Lat[" + str(latitude) + "] Long[" + str(longitude) + "] Alt[" + str(altitude) + "]")
         latitudeInt = int(latitude * 1e7)
         longitudeInt = int(longitude * 1e7)
         altitudeInt = int(altitude * 1e2)
@@ -752,7 +753,7 @@ class Mavlink(object):
 
     def RequestData(self):
         if(self.mavPort==None):
-            _inst.Print(CR,"Warning. No drone connection")
+            self.inst.Print(Inst.CR,"Warning. No drone connection")
             return
         # if
 
