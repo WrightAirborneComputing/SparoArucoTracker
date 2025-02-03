@@ -1,6 +1,6 @@
 import cv2
-import numpy as np
 from cv2 import aruco
+import numpy as np
 import math
 
 # Class for storing one AruCo marker's state
@@ -11,6 +11,7 @@ class Aruco():
         self.id = id
         self.mmPerPixel = mmPerPixel
         self.rotationVector = rotationVector
+        self.depth = translationVector[2]
         self.sheetX = sheetX
         self.sheetY = sheetY
         self.camX = camX
@@ -36,7 +37,8 @@ class ArucoSheet():
     def __init__(self):
 
         # Set the scale factor relative to A0
-        self.scaler = 12.0/50.0 # A4
+        self.horizScaler = 12.0/50.0    # A4
+        self.vertScaler  = 710.0/1472.0 # Measured from rig
 
         # Create a dictionary of locations (in mm)
         self.coords = {
@@ -64,10 +66,10 @@ class ArucoSheet():
     # def
 
     def Location(self,id):
-        # Dictionary lockup
+        # Dictionary lookup
         try:
             x,y,z = self.coords.get(int(id), None)
-            scaledLocation = (float(x) * self.scaler, float(y) * self.scaler, float(z) * self.scaler)
+            scaledLocation = (float(x) * self.horizScaler, float(y) * self.horizScaler, float(z) * self.vertScaler)
             return scaledLocation
         except:
             return None  # Return None for invalid input
@@ -97,20 +99,21 @@ class ArucoDetector():
         # Target location in pixels
         self.averageX = None
         self.averageY = None
+        self.averageZ = None
         self.deviationXY = None
 
         # Target location in mm
         self.targetX = None
         self.targetY = None
+        self.targetZ = None
 
     # def
 
     def InfoText(self):
-        if((self.targetX is None) or (self.targetY is None)):
+        if((self.targetX is None) or (self.targetY is None) or (self.targetZ is None)):
             return "No Arucos"
         else:
-            return "Arucos[%d] TargetMM[%.1f,%.1f]" % (len(self.arucos),
-                                                       self.targetX,self.targetY)
+            return "Arucos[%d] TargetMM[%.2f,%.2f,%.2f]" % (len(self.arucos),self.targetX,self.targetY,self.targetZ)
         # if
     # def
 
@@ -126,7 +129,7 @@ class ArucoDetector():
             # if
 
             # Size is derived from id
-            markerSize = id * self.arucoSheet.scaler * 10.0 # mm
+            markerSize = id * self.arucoSheet.horizScaler * 10.0 # mm
 
             # Calculate image resolution
             x0,y0 = corner[0][0]
@@ -168,15 +171,18 @@ class ArucoDetector():
     def ProcessArucos(self,imageCentreX,imageCentreY):
 
         # Average all arucos
-        xTot,yTot,mmPerPixelTot = 0.0,0.0,0.0
+        xTot,yTot,zTot = 0.0,0.0,0.0
+        mmPerPixelTot = 0.0
         for loc in self.arucos:
             xTot += loc.camX
             yTot += loc.camY
+            zTot += loc.depth
             mmPerPixelTot += loc.mmPerPixel
             #print("mmPerPixel=" + str(loc.mmPerPixel))
         # for
         self.averageX = int(xTot/len(self.arucos))
         self.averageY = int(yTot/len(self.arucos))
+        self.averageZ = int(zTot/len(self.arucos))
         self.mmPerPixel = mmPerPixelTot / len(self.arucos)
 
         # Mean deviation from average
@@ -190,10 +196,18 @@ class ArucoDetector():
         # Translate pixels to mm from centre
         self.targetX = ((self.averageX - imageCentreX) * self.mmPerPixel) / 1000.0 # metres
         self.targetY = ((self.averageY - imageCentreY) * self.mmPerPixel) / 1000.0 # metres
+
+        # Translate depth to mm below
+        self.targetZ = (self.averageZ * self.arucoSheet.vertScaler) / 1000.0 # metres
         
     # def
 
     def Read(self,frame):
+
+        # Valid input check
+        if(frame is None):
+            return None
+        # if
 
         # Find the ArUco marker
         yPixels,xPixels,_ = frame.shape
@@ -260,7 +274,7 @@ class ArucoDetector():
     # def
 
     def TargetOffset(self):
-        return self.targetX,self.targetY
+        return self.targetX,self.targetY,self.targetZ
     # def
 
 # class
