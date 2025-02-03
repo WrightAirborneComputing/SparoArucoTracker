@@ -78,7 +78,11 @@ class Camera():
             # if
         else:
             ret, image = self.camera.read()
-            imgHeight, imgWidth, numChannels = image.shape
+        # if
+
+        # Check for successful acquisition
+        if(image is None):
+            return None
         # if
 
         # Needed to make overlaying elements on the RGB frame work
