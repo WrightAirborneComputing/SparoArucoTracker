@@ -7,7 +7,9 @@ from MavlinkLib import Mavlink
 _inst = Inst()
 _camera = Camera()
 _arucoDetector = ArucoDetector()
-_mavlink = Mavlink(True)
+_mavlink = Mavlink()
+#_mavlink.Connect("127.0.0.1",14552)
+_mavlink.Connect("",4)
 
 while(True):
 
@@ -18,11 +20,6 @@ while(True):
     arucos = _arucoDetector.Read(frame)
 
     # Inst
-    for aruco in arucos:
-        if((aruco.id==25) or (aruco.id==50)):
-            _inst.Print(Inst.CR,aruco.InfoText())
-        # if
-    # for
     _inst.Print(Inst.CR,_arucoDetector.InfoText())
 
     # User display/exit
@@ -34,20 +31,24 @@ while(True):
     # if
 
     # Extract target location
-    targetX,targetY,targetZ = _arucoDetector.Target()
+    targetX,targetY,targetZ,yaw = _arucoDetector.TargetPose()
 
-    if((not targetX is None) and (not targetY is None)):
-        _mavlink.SendRangfinderMetres(targetZ)
-        _mavlink.TargetedLand(targetX,targetY,targetZ,
-                                   dist_m=targetaverage_z_m, quart=quaternion, valid=1)
-    # If no markers detected send 0 values and set "Valid" to 0 (tells ardupilot ekf)
+    # Send to vehicle
+    if(not targetZ is None):
+        _mavlink.SendRangefinderMetres(targetZ)
+    # if
+
+    if(_mavlink.mavPort is None):
+        _inst.Print(Inst.CR,"No vehicle connection")
+    elif((not targetX is None) and (not targetY is None) and (not targetZ is None)):
+        _mavlink.TargetedLand(targetX,targetY,targetZ,yaw,1)
     else:
-        _mavlink.TargetedLand(x_m=0, y_m=0, z_m=0,
-                                   dist_m=0, quart=[1, 0, 0, 0], valid=0)
+        # If no markers detected send 0 values
+        _mavlink.TargetedLand(0.0,0.0,0.0,0.0,0)
     # if
 
     # Scheduling
-    time.sleep(0.5)
+    time.sleep(0.1)
 
 # while
 
