@@ -37,8 +37,13 @@ class ArucoSheet():
     def __init__(self):
 
         # Set the scale factor relative to A0
-        self.horizScaler = 12.0/50.0    # A4
-        self.vertScaler  = 710.0/1472.0 # Measured from rig
+        if(False):
+            self.horizScaler = 12.0/50.0    # A4
+            self.vertScaler  = 710.0/1472.0 # A4, measured from IRL
+        else:
+            self.horizScaler = 50.0/50.0    # A0
+            self.vertScaler  = 1.0/1.0      # A0, measured from IRL
+        # if
 
         # Create a dictionary of locations (in mm)
         self.coords = {
@@ -100,12 +105,14 @@ class ArucoDetector():
         self.averageX = None
         self.averageY = None
         self.averageZ = None
+        self.averageYaw = None
         self.deviationXY = None
 
-        # Target location in mm
-        self.targetX = None
-        self.targetY = None
-        self.targetZ = None
+        # Target location in metres/degrees
+        self.targetX   = None
+        self.targetY   = None
+        self.targetZ   = None
+        self.targetYaw = None
 
     # def
 
@@ -171,21 +178,23 @@ class ArucoDetector():
     def ProcessArucos(self,imageCentreX,imageCentreY):
 
         # Average all arucos
-        xTot,yTot,zTot = 0.0,0.0,0.0
+        xTot,yTot,zTot,yawTot = 0.0,0.0,0.0,0.0
         mmPerPixelTot = 0.0
         for loc in self.arucos:
             xTot += loc.camX
             yTot += loc.camY
             zTot += loc.depth
+            yawTot += loc.yaw
             mmPerPixelTot += loc.mmPerPixel
             #print("mmPerPixel=" + str(loc.mmPerPixel))
         # for
-        self.averageX = int(xTot/len(self.arucos))
-        self.averageY = int(yTot/len(self.arucos))
-        self.averageZ = int(zTot/len(self.arucos))
+        self.averageX   = int(xTot/len(self.arucos))
+        self.averageY   = int(yTot/len(self.arucos))
+        self.averageZ   = int(zTot/len(self.arucos))
+        self.averageYaw = int(yawTot/len(self.arucos))
         self.mmPerPixel = mmPerPixelTot / len(self.arucos)
 
-        # Mean deviation from average
+        # Mean deviation from average x,y
         devTot = 0.0
         for loc in self.arucos:
             dev = math.hypot(loc.camX - self.averageX,loc.camY - self.averageY)
@@ -193,12 +202,15 @@ class ArucoDetector():
         # for
         self.deviationXY = int(devTot/len(self.arucos))
 
-        # Translate pixels to mm from centre
+        # Translate pixels to metres from centre
         self.targetX = ((self.averageX - imageCentreX) * self.mmPerPixel) / 1000.0 # metres
         self.targetY = ((self.averageY - imageCentreY) * self.mmPerPixel) / 1000.0 # metres
 
-        # Translate depth to mm below
+        # Translate depth to metres below
         self.targetZ = (self.averageZ * self.arucoSheet.vertScaler) / 1000.0 # metres
+
+        # Store as degrees
+        self.targetYaw = self.averageYaw # degrees
         
     # def
 
@@ -235,7 +247,7 @@ class ArucoDetector():
             # if
 
         # for
-
+        
         # Measure image
         imageCentreX = int(frame.shape[1]/2)
         imageCentreY = int(frame.shape[0]/2)
@@ -247,14 +259,15 @@ class ArucoDetector():
             self.targetX = None
             self.targetY = None
             self.deviationXY = None
+            markedImg = frame
         else:
             self.ProcessArucos(imageCentreX,imageCentreY)
             cv2.circle(frame, (self.averageX,self.averageY), self.deviationXY, (0, 0, 255), -1)
+            # Decorate image with recognised markers
+            #markedImg = aruco.drawDetectedMarkers(frame, corners, ids)
+            markedImg = frame
         # if
-
-        # Decorate image with recognised markers
-        markedImg = aruco.drawDetectedMarkers(frame, corners, ids)
-
+        
         # Decorate image with cross sight
         length = 30
         thickness = 2
@@ -273,8 +286,9 @@ class ArucoDetector():
         return self.arucos
     # def
 
-    def TargetOffset(self):
-        return self.targetX,self.targetY,self.targetZ
+    def TargetPose(self):
+        # Note x=fwd,y=right for real-world
+        return self.targetY,self.targetX,self.targetZ,self.targetYaw
     # def
 
 # class
