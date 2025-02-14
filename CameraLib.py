@@ -6,9 +6,8 @@ from Instrumentation import Inst
 if os.name == 'nt': # Assume Windows/PC
     import cv2
 else:               # Assume Linux/RPi
-    import picamera
-    import picamera.array
-# if
+    from picamera2 import Picamera2
+#if
 
 BLUE   = (255,0,0)
 GREEN  = (0,255,0)
@@ -19,7 +18,7 @@ class Camera():
     def __init__(self): 
 
         self.inst = Inst()
-        self.picam = False
+        self.picam = True
         self.camera = None
         self.imageHeight = 0
         self.imageWidth = 0
@@ -48,27 +47,19 @@ class Camera():
             self.inst.Print(Inst.CR,"Video capture ready")
         else:
             self.inst.Print(Inst.CR,"Running Picam connection")
-            self.camera = picamera.PiCamera(framerate=10)
-            resolution = (640,480)
-            self.rawCapture = picamera.array.PiRGBArray(self.camera, size=resolution)
-            self.stream = self.camera.capture_continuous(self.rawCapture, format='bgr', use_video_port=True)
-            for frame in self.stream:
-                self.frame = frame.array
-                self.rawCapture.truncate(0)
-                break
-            # for
-
-            # Start monitoring thread
-            self.streamingThread = Thread(target=self.PicamStreaming)
-            self.streamingThread.start()
-            self.inst.Print(Inst.CR,"Camera streaming started")
+            self.camera = Picamera2()
+            # resolution = (1640, 1232)
+            resolution = (640, 480)
+            config = self.camera.create_preview_configuration(main={"format": 'XRGB8888', "size": resolution})
+            self.camera.configure(config)
+            self.camera.start()
         # if
     # def
 
     def Read(self):
         if(self.picam):
-            # Create image from latest cached frame
-            image = self.frame
+            # Get Frame
+            image = self.camera.capture_array()
             
             # Rotate
             if(self.rotate):
