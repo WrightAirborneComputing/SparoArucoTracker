@@ -103,7 +103,7 @@ class Mavlink(object):
             # Port 1 = GUI drone link
             if(portNumber==1):
                 self.portName = "/dev/ttyAMA0"
-                self.baudRate = 57600
+                self.baudRate = 115200
             # Port 2 = Drone ground link
             elif(portNumber==2):
                 self.portName = "/dev/ttyUSB0"
@@ -111,11 +111,11 @@ class Mavlink(object):
             # Port 3 = Drone FCS link
             elif(portNumber==3):
                 self.portName = "/dev/serial0"
-                self.baudRate = 500000
+                self.baudRate = 115200
            # Port 4 = Drone FCS link
             elif(portNumber==4):
                 self.portName = "/dev/ttyS0"
-                self.baudRate = 57600
+                self.baudRate = 115200
             #end if
         #end if
 
@@ -593,23 +593,32 @@ class Mavlink(object):
 
     # def
     
-    def TargetedLand(self,x,y,z):
+    def TargetedLand(self,x,y,z,yaw,valid):
 
         # Derive descent angle
-        xRads = math.atan(z/x)
-        yRads = math.atan(z/y)
+        xRads = 0.0
+        yRads = 0.0
+        if(not z==0.0):
+            xRads = math.atan(x/z)
+            yRads = math.atan(y/z)
+        # if
+        print("XYZ[%.2f,%.2f,%.2f] DescentAngles[%.1f,%.1f]" % (x,y,z,math.degrees(xRads),math.degrees(yRads)))
+        yawRads = math.radians(yaw)
+        yawRateRads = math.radians(-5.0)
 
+        # Set up the target
         self.mavPort.mav.landing_target_send(
-            int(time() * 1e6),  # Timestamp
-            0,  # Target number
+            int(time() * 1e3),  # Timestamp
+            0,       # Target number
             mavutil.mavlink.MAV_FRAME_BODY_NED,  # Frame of reference
             xRads,   # X-offset in radians (centered target = 0)
             yRads,   # Y-offset in radians (centered target = 0)
-            z,   # Distance to target (meters)
-            0.5,   # Target size (meters)
-            0      # Target type (0 = Fiducial marker, 1 = beacon)
+            z,       # Distance to target (meters)
+            0.5,     # Target size (meters)
+            0        # Target type (0 = Fiducial marker, 1 = beacon)
             )
 
+        # Command landing
         self.mavPort.mav.command_long_send(
             self.mavPort.target_system,
             self.mavPort.target_component,
@@ -617,20 +626,44 @@ class Mavlink(object):
             0, 0, 0, 0, 0, 0, 0
             )
 
-        # Wait for ack
-        self.WaitForAck(mavutil.mavlink.MAV_CMD_NAV_LAND)
+        if(False):
+            self.mavPort.mav.set_position_target_local_ned_send(
+                                      0,  # system time in milliseconds
+                                      self.mavPort.target_system,
+                                      self.mavPort.target_component,
+                                      mavutil.mavlink.MAV_FRAME_LOCAL_NED,# coordinate frame
+                                      0b0000001111111111,                # type mask
+                                      0, 0, 0,                           # position x,y,z
+                                      0.0, 0.0, 0.0,                     # velocity x,y,z (convert to FRD)
+                                      0.0, 0.0, 0.0,                     # accel x,y,z
+                                      0, math.radians(yawRateRads))      # yaw, yaw rate
+
+        # Send Yaw Rate Control 
+        if(False):
+            self.mavPort.mav.set_attitude_target_send(
+                0,
+                self.mavPort.target_system,
+                self.mavPort.target_component,
+                8 + 16,  # Ignore attitude & thrust, use rates only
+                self.ToQuaternion(0.0, 0.0, 0.0), # Identity quaternion (ignored since we're using yaw rate)
+                0.0, 0.0, yawRateRads,  # Yaw rate in rad/sec
+                0.0  # Thrust (ignored)
+            )
+
     # def
+
 
     # Dummy Rangefinder
     def SendRangefinderMetres(self,metres):
-
-        # Dummy voltage
-        voltage = 5.0
-
-        # MAVLink message: RANGEFINDER
-        self.mavPort.mav.rangefinder_send(
-            metres,  # Distance in meters
-            voltage  # Voltage in volts
+        self.mavPort.mav.distance_sensor_send(
+            0,          # time since system boot, not used
+            1,          # min distance cm
+            12000,      # max distance cm
+            int(metres * 100.0),       # current distance, must be int
+            0,          # type = laser?
+            0,          # onboard id, not used
+            mavutil.mavlink.MAV_SENSOR_ROTATION_PITCH_270, # must be set to MAV_SENSOR_ROTATION_PITCH_270 for mavlink rangefinder, represents downward facing
+            0           # covariance, not used
         )
     # def
 
